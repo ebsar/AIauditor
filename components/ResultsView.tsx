@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
+import { FixPrompt } from './FixPrompt'
 import { IssueList } from './IssueList'
 import { ScoreCard } from './ScoreCard'
 import type { AnalyzeResponse } from '@/lib/utils'
@@ -23,7 +24,15 @@ export function ResultsView({ jobId }: ResultsViewProps) {
     const stored = sessionStorage.getItem(`audit:${jobId}`)
 
     if (stored) {
-      setResult(JSON.parse(stored) as AnalyzeResponse)
+      try {
+        const parsed = JSON.parse(stored) as AnalyzeResponse
+
+        if (parsed.lighthouse) {
+          setResult(parsed)
+        }
+      } catch {
+        sessionStorage.removeItem(`audit:${jobId}`)
+      }
     }
 
     setHasLoaded(true)
@@ -79,7 +88,7 @@ export function ResultsView({ jobId }: ResultsViewProps) {
         </div>
 
         <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
-          <ScoreCard score={result.audit.score} />
+          <ScoreCard score={result.audit.score} lighthouse={result.lighthouse} />
 
           <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-soft">
             <h2 className="text-xl font-bold text-slate-950">Summary</h2>
@@ -102,6 +111,8 @@ export function ResultsView({ jobId }: ResultsViewProps) {
             </ul>
           </section>
         </div>
+
+        <FixPrompt result={result} />
       </div>
     </main>
   )

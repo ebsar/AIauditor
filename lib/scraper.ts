@@ -23,6 +23,7 @@ export async function scrapeHtml(url: string): Promise<HtmlAudit> {
   const $ = cheerio.load(html)
 
   return {
+    available: true,
     title: cleanText($('title').first().text()),
     description: cleanText($('meta[name="description"]').attr('content') ?? ''),
     headings: {
@@ -50,6 +51,7 @@ export async function scrapeHtml(url: string): Promise<HtmlAudit> {
 
 export function fallbackHtmlAudit(): HtmlAudit {
   return {
+    available: false,
     title: '',
     description: '',
     headings: {

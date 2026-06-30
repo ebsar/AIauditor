@@ -6,6 +6,7 @@ export type LighthouseAudit = {
 }
 
 export type HtmlAudit = {
+  available: boolean
   title: string
   description: string
   headings: {
@@ -38,6 +39,7 @@ export type AnalyzeResponse = {
   jobId: string
   url: string
   audit: AiAudit
+  lighthouse: Pick<LighthouseAudit, 'performance' | 'seo' | 'accessibility'>
 }
 
 export type CombinedAuditInput = {
@@ -86,6 +88,12 @@ export function clampScore(score: number): number {
   return Math.max(0, Math.min(100, Math.round(score)))
 }
 
+export function calculateOverallScore(lighthouse: LighthouseAudit): number {
+  return clampScore(
+    (lighthouse.performance + lighthouse.seo + lighthouse.accessibility) / 3
+  )
+}
+
 export async function withTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
@@ -119,9 +127,7 @@ export function parseJsonObject<T>(value: string | undefined): T | null {
 }
 
 export function createFallbackAudit(input: CombinedAuditInput): AiAudit {
-  const averageScore = clampScore(
-    (input.lighthouse.performance + input.lighthouse.seo + input.lighthouse.accessibility) / 3
-  )
+  const averageScore = calculateOverallScore(input.lighthouse)
   const issues: AuditIssue[] = []
 
   if (input.lighthouse.performance < 75) {
@@ -132,7 +138,10 @@ export function createFallbackAudit(input: CombinedAuditInput): AiAudit {
     })
   }
 
-  if (!input.html.title || !input.html.description || input.html.headings.h1.length === 0) {
+  if (
+    input.html.available &&
+    (!input.html.title || !input.html.description || input.html.headings.h1.length === 0)
+  ) {
     issues.push({
       category: 'SEO',
       problem: 'Search engines may not understand the page clearly.',
@@ -140,7 +149,7 @@ export function createFallbackAudit(input: CombinedAuditInput): AiAudit {
     })
   }
 
-  if (input.html.imagesTotal > 0 && input.html.imagesMissingAlt > 0) {
+  if (input.html.available && input.html.imagesTotal > 0 && input.html.imagesMissingAlt > 0) {
     issues.push({
       category: 'Accessibility',
       problem: 'Some images are missing helpful descriptions.',
@@ -148,7 +157,7 @@ export function createFallbackAudit(input: CombinedAuditInput): AiAudit {
     })
   }
 
-  if (input.html.scripts > 20 || input.html.stylesheets > 8) {
+  if (input.html.available && (input.html.scripts > 20 || input.html.stylesheets > 8)) {
     issues.push({
       category: 'Design',
       problem: 'The page may be carrying more visual and tracking weight than it needs.',
@@ -167,15 +176,8 @@ export function createFallbackAudit(input: CombinedAuditInput): AiAudit {
   return {
     score: averageScore,
     summary:
-      averageScore > 0
-        ? 'The audit completed with a basic fallback report. Use these items as practical next steps to improve visitor trust and conversions.'
-        : 'The site could not be fully reached in time, so this report uses safe fallback guidance. Check that the website is online, then try again.',
+      'This report is based on measured Lighthouse scores and the page details that were available during the audit.',
     issues,
-    quickWins: [
-      'Make the main headline specific and easy to understand.',
-      'Compress large images before uploading them.',
-      'Add missing image descriptions.',
-      'Remove third-party scripts that do not support sales or support goals.'
-    ]
+    quickWins: issues.slice(0, 4).map((issue) => issue.fix)
   }
 }

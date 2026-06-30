@@ -16,7 +16,10 @@ export const AUDIT_SYSTEM_PROMPT = `You are a website auditor for business owner
 Rules:
 No technical jargon
 Be simple and clear
-Focus on business impact`
+Focus on business impact
+Never invent findings
+Use only the supplied Lighthouse scores and available HTML data
+If html.available is false, do not claim that page elements are missing`
 
 export function compactAuditInput(input: CombinedAuditInput) {
   return {

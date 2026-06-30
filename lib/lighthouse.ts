@@ -1,31 +1,34 @@
 import { existsSync } from 'node:fs'
-import puppeteer from 'puppeteer'
+import chromium from '@sparticuz/chromium'
+import puppeteer, { type Browser, type LaunchOptions } from 'puppeteer-core'
 import { withTimeout, type LighthouseAudit } from './utils'
 
-const LIGHTHOUSE_TIMEOUT_MS = 8_500
-const LIGHTHOUSE_RETRY_TIMEOUT_MS = 4_500
+const LIGHTHOUSE_TIMEOUT_MS = 15_000
+const LIGHTHOUSE_RETRY_TIMEOUT_MS = 3_000
 
 export async function runLighthouseAudit(url: string): Promise<LighthouseAudit> {
   try {
     return await runLighthouseAttempt(url, LIGHTHOUSE_TIMEOUT_MS)
-  } catch {
+  } catch (firstError) {
+    console.warn('[lighthouse] first attempt failed', formatError(firstError))
+
     try {
       return await runLighthouseAttempt(url, LIGHTHOUSE_RETRY_TIMEOUT_MS)
-    } catch {
-      return fallbackLighthouseAudit('lighthouse_unavailable')
+    } catch (retryError) {
+      console.error('[lighthouse] retry failed', formatError(retryError))
+      throw new Error('Lighthouse could not produce valid scores.')
     }
   }
 }
 
 async function runLighthouseAttempt(url: string, timeoutMs: number): Promise<LighthouseAudit> {
-  let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null
+  let browser: Browser | null = null
 
   try {
+    const launchOptions = await getLaunchOptions()
     browser = await puppeteer.launch({
-      headless: true,
-      executablePath: resolveBrowserExecutablePath(),
-      protocolTimeout: timeoutMs,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+      ...launchOptions,
+      protocolTimeout: timeoutMs
     })
 
     const port = Number(new URL(browser.wsEndpoint()).port)
@@ -46,15 +49,27 @@ async function runLighthouseAttempt(url: string, timeoutMs: number): Promise<Lig
 
     const lhr = result?.lhr
 
+    if (!lhr || lhr.runtimeError) {
+      throw new Error(
+        lhr?.runtimeError
+          ? `${lhr.runtimeError.code}: ${lhr.runtimeError.message}`
+          : 'Lighthouse returned no report.'
+      )
+    }
+
+    const performance = toScore(lhr.categories?.performance?.score, 'performance')
+    const seo = toScore(lhr.categories?.seo?.score, 'seo')
+    const accessibility = toScore(lhr.categories?.accessibility?.score, 'accessibility')
+
     return {
-      performance: toScore(lhr?.categories?.performance?.score),
-      seo: toScore(lhr?.categories?.seo?.score),
-      accessibility: toScore(lhr?.categories?.accessibility?.score),
+      performance,
+      seo,
+      accessibility,
       raw: {
-        requestedUrl: lhr?.requestedUrl,
-        finalDisplayedUrl: lhr?.finalDisplayedUrl,
-        fetchTime: lhr?.fetchTime,
-        categories: lhr?.categories
+        requestedUrl: lhr.requestedUrl,
+        finalDisplayedUrl: lhr.finalDisplayedUrl,
+        fetchTime: lhr.fetchTime,
+        categories: lhr.categories
       }
     }
   } finally {
@@ -62,27 +77,35 @@ async function runLighthouseAttempt(url: string, timeoutMs: number): Promise<Lig
   }
 }
 
-function toScore(score: number | null | undefined): number {
+function toScore(score: number | null | undefined, category: string): number {
   if (typeof score !== 'number') {
-    return 0
+    throw new Error(`Lighthouse returned no ${category} score.`)
   }
 
   return Math.round(score * 100)
 }
 
-function fallbackLighthouseAudit(reason: string): LighthouseAudit {
-  return {
-    performance: 0,
-    seo: 0,
-    accessibility: 0,
-    raw: {
-      fallback: true,
-      reason
+async function getLaunchOptions(): Promise<LaunchOptions> {
+  const localExecutablePath = resolveLocalBrowserExecutablePath()
+
+  if (localExecutablePath) {
+    return {
+      headless: true,
+      executablePath: localExecutablePath,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
     }
+  }
+
+  chromium.setGraphicsMode = false
+
+  return {
+    headless: 'shell',
+    executablePath: await chromium.executablePath(),
+    args: await puppeteer.defaultArgs({ args: chromium.args, headless: 'shell' })
   }
 }
 
-function resolveBrowserExecutablePath(): string | undefined {
+function resolveLocalBrowserExecutablePath(): string | undefined {
   const configuredPath = process.env.PUPPETEER_EXECUTABLE_PATH
 
   if (configuredPath && existsSync(configuredPath)) {
@@ -104,4 +127,11 @@ function resolveBrowserExecutablePath(): string | undefined {
   ]
 
   return candidates.find((candidate) => existsSync(candidate))
+}
+
+function formatError(error: unknown) {
+  return {
+    message: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined
+  }
 }

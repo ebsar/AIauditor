@@ -1,10 +1,11 @@
-import { clampScore, getScoreLabel } from '@/lib/utils'
+import { clampScore, getScoreLabel, type AnalyzeResponse } from '@/lib/utils'
 
 type ScoreCardProps = {
   score: number
+  lighthouse: AnalyzeResponse['lighthouse']
 }
 
-export function ScoreCard({ score }: ScoreCardProps) {
+export function ScoreCard({ score, lighthouse }: ScoreCardProps) {
   const normalizedScore = clampScore(score)
   const label = getScoreLabel(normalizedScore)
   const labelStyles = {
@@ -37,6 +38,23 @@ export function ScoreCard({ score }: ScoreCardProps) {
           style={{ width: `${normalizedScore}%` }}
         />
       </div>
+
+      <div className="mt-6 grid grid-cols-3 gap-3 border-t border-slate-100 pt-5">
+        <Metric label="Performance" value={lighthouse.performance} />
+        <Metric label="SEO" value={lighthouse.seo} />
+        <Metric label="Accessibility" value={lighthouse.accessibility} />
+      </div>
     </section>
+  )
+}
+
+function Metric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="min-w-0 text-center">
+      <p className="text-lg font-bold text-slate-950">{clampScore(value)}</p>
+      <p className="mt-1 break-words text-xs font-semibold text-slate-500">
+        {label}
+      </p>
+    </div>
   )
 }
