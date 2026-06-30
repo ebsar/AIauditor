@@ -2,7 +2,13 @@
   "name": "ai-website-auditor",
   "version": "0.1.0",
   "private": true,
-  "packageManager": "pnpm@11.7.0",
+  "packageManager": "pnpm@10.15.1",
+  "engines": {
+    "node": "20.x"
+  },
+  "puppeteer": {
+    "skipDownload": true
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
